@@ -34,32 +34,115 @@ def parse_args():
     parser.add_argument("--reason", action="store_true", help="분류 이유 포함")
     parser.add_argument("--api-key", help="Anthropic API 키 (기본값: ANTHROPIC_API_KEY 환경변수)")
     parser.add_argument("--organize", metavar="DIR", help="분류된 이미지를 포즈별 서브폴더로 복사할 디렉토리")
+    parser.add_argument("--batch-size", type=int, default=5, help="포즈 자동 발견 시 한 번에 보낼 이미지 수 (기본값: 5)")
     return parser.parse_args()
 
 
-def get_poses(args):
+def discover_poses(client, images: list, batch_size: int) -> list:
+    batches = [images[i:i + batch_size] for i in range(0, len(images), batch_size)]
+    raw_poses = []
+
+    with Progress(
+        TextColumn("  [bold blue]포즈 발견[/bold blue]"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("[cyan]{task.fields[info]}"),
+    ) as progress:
+        task = progress.add_task("discovering", total=len(batches), info="")
+        for i, batch in enumerate(batches):
+            progress.update(task, info=f"배치 {i + 1}/{len(batches)}")
+            content = []
+            for img_path in batch:
+                data, media_type = encode_image(img_path)
+                content.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": data},
+                })
+            content.append({
+                "type": "text",
+                "text": (
+                    "These images show people in various poses. "
+                    "List all distinct poses you can identify across these images. "
+                    "Respond with only a JSON array of short pose name strings, e.g. [\"standing\", \"sitting\"]. "
+                    "Use consistent naming language (Korean or English) matching what appears most natural."
+                ),
+            })
+            try:
+                response = client.messages.create(
+                    model="claude-haiku-4-5",
+                    max_tokens=256,
+                    messages=[{"role": "user", "content": content}],
+                )
+                raw = response.content[0].text.strip()
+                if raw.startswith("```"):
+                    parts = raw.split("```")
+                    raw = parts[1] if len(parts) > 1 else raw
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                batch_poses = json.loads(raw.strip())
+                if isinstance(batch_poses, list):
+                    raw_poses.extend(str(p) for p in batch_poses if p)
+            except Exception as e:
+                console.print(f"[yellow]배치 {i + 1} 오류 (스킵): {e}[/yellow]")
+            progress.update(task, advance=1)
+
+    if not raw_poses:
+        console.print("[red]포즈를 자동으로 발견하지 못했습니다. --poses 옵션으로 직접 지정하세요.[/red]")
+        sys.exit(1)
+
+    # 이미지가 적거나 배치가 1개면 통합 단계 생략
+    if len(batches) == 1:
+        seen = []
+        for p in raw_poses:
+            if p not in seen:
+                seen.append(p)
+        return seen
+
+    # 여러 배치에서 수집된 포즈를 Claude로 통합
+    console.print("  [dim]포즈 목록 통합 중...[/dim]")
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=256,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Consolidate this list of pose names by merging duplicates and near-duplicates "
+                    f"into a clean, unique set. Keep the most descriptive or natural name for each. "
+                    f"Input: {json.dumps(raw_poses, ensure_ascii=False)}\n"
+                    f"Respond with only a JSON array of the final pose names."
+                ),
+            }],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) > 1 else raw
+            if raw.startswith("json"):
+                raw = raw[4:]
+        consolidated = json.loads(raw.strip())
+        if isinstance(consolidated, list) and consolidated:
+            return [str(p) for p in consolidated if p]
+    except Exception as e:
+        console.print(f"[yellow]통합 단계 오류 (원본 사용): {e}[/yellow]")
+
+    # 통합 실패 시 단순 중복 제거
+    seen = []
+    for p in raw_poses:
+        if p not in seen:
+            seen.append(p)
+    return seen
+
+
+def get_poses(args, client=None, images=None):
     if args.poses:
         poses = [p.strip() for p in args.poses.split(",") if p.strip()]
         if poses:
             return poses
 
-    console.print("\n[bold]포즈를 입력하세요[/bold] (빈 줄로 완료):")
-    poses = []
-    i = 1
-    while True:
-        try:
-            pose = input(f"  포즈 {i}: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            break
-        if not pose:
-            break
-        poses.append(pose)
-        i += 1
-
-    if not poses:
-        console.print("[red]포즈를 최소 1개 입력해야 합니다.[/red]", file=sys.stderr)
-        sys.exit(1)
-
+    console.print("\n[bold]포즈 자동 발견 중...[/bold]")
+    poses = discover_poses(client, images, args.batch_size)
+    console.print(f"  발견된 포즈: [green]{', '.join(poses)}[/green]\n")
     return poses
 
 
@@ -68,7 +151,7 @@ def collect_images(input_path: str, extensions: list) -> list:
     if p.is_file():
         return [p] if p.suffix.lower() in extensions else []
     if not p.is_dir():
-        console.print(f"[red]경로를 찾을 수 없습니다: {input_path}[/red]", file=sys.stderr)
+        console.print(f"[red]경로를 찾을 수 없습니다: {input_path}[/red]")
         sys.exit(1)
     return sorted(f for f in p.iterdir() if f.is_file() and f.suffix.lower() in extensions)
 
@@ -242,11 +325,10 @@ def print_summary(results: list, poses: list):
 
 def main():
     args = parse_args()
-    poses = get_poses(args)
 
     api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        console.print("[red]오류: API 키가 없습니다. ANTHROPIC_API_KEY 환경변수를 설정하거나 --api-key를 사용하세요.[/red]", file=sys.stderr)
+        console.print("[red]오류: API 키가 없습니다. ANTHROPIC_API_KEY 환경변수를 설정하거나 --api-key를 사용하세요.[/red]")
         sys.exit(1)
 
     client = anthropic.Anthropic(api_key=api_key)
@@ -255,8 +337,10 @@ def main():
     images = collect_images(args.input, extensions)
 
     if not images:
-        console.print(f"[red]이미지를 찾을 수 없습니다: {args.input}[/red]", file=sys.stderr)
+        console.print(f"[red]이미지를 찾을 수 없습니다: {args.input}[/red]")
         sys.exit(1)
+
+    poses = get_poses(args, client, images)
 
     console.print(f"\n[bold]🤖 포즈 분류기[/bold]")
     console.print(f"  포즈: {', '.join(poses)}")
