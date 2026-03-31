@@ -20,8 +20,7 @@ docker build -t pose-classifier .
 ## 빠른 시작
 
 ```bash
-# 1. API 키 설정
-export ANTHROPIC_API_KEY="sk-ant-..."
+# 1. API 키 설정 (.env 파일 또는 export)
 
 # 2. 실행 (포즈 직접 지정)
 docker compose run --rm classifier \
@@ -40,16 +39,16 @@ docker compose run --rm -it classifier \
 
 ## 전체 옵션
 
-| 옵션 | 설명 | 기본값 |
-|------|------|--------|
-| `--poses` | 쉼표 구분 포즈 목록 | 대화형 입력 |
-| `--input` | 이미지 폴더/파일 | 현재 디렉토리 |
-| `--output` | 결과 파일 (.csv / .json) | `results.csv` |
-| `--extensions` | 처리할 확장자 | jpg,jpeg,png,webp,gif |
-| `--confidence` | 신뢰도 점수 포함 | off |
-| `--reason` | 분류 이유 포함 | off |
-| `--organize` | 포즈별 서브폴더로 이미지 복사할 디렉토리 | off |
-| `--api-key` | API 키 직접 지정 | 환경변수 사용 |
+| 옵션           | 설명                                     | 기본값                |
+| -------------- | ---------------------------------------- | --------------------- |
+| `--poses`      | 쉼표 구분 포즈 목록                      | 대화형 입력           |
+| `--input`      | 이미지 폴더/파일                         | 현재 디렉토리         |
+| `--output`     | 결과 파일 (.csv / .json)                 | `results.csv`         |
+| `--extensions` | 처리할 확장자                            | jpg,jpeg,png,webp,gif |
+| `--confidence` | 신뢰도 점수 포함                         | off                   |
+| `--reason`     | 분류 이유 포함                           | off                   |
+| `--organize`   | 포즈별 서브폴더로 이미지 복사할 디렉토리 | off                   |
+| `--api-key`    | API 키 직접 지정                         | 환경변수 사용         |
 
 ## 사용 예시
 
@@ -84,6 +83,7 @@ docker compose run --rm classifier \
 ```
 
 결과 폴더 구조:
+
 ```
 organized/
 ├── 서있기/
@@ -149,9 +149,7 @@ photo2.jpg,앉기,0.88,의자에 앉은 자세
 {
   "poses": ["서있기", "앉기", "점프"],
   "total": 3,
-  "results": [
-    { "file": "photo1.jpg", "pose": "서있기", "confidence": 0.95 }
-  ]
+  "results": [{ "file": "photo1.jpg", "pose": "서있기", "confidence": 0.95 }]
 }
 ```
 
