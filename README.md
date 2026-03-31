@@ -48,6 +48,7 @@ docker compose run --rm -it classifier \
 | `--extensions` | 처리할 확장자 | jpg,jpeg,png,webp,gif |
 | `--confidence` | 신뢰도 점수 포함 | off |
 | `--reason` | 분류 이유 포함 | off |
+| `--organize` | 포즈별 서브폴더로 이미지 복사할 디렉토리 | off |
 | `--api-key` | API 키 직접 지정 | 환경변수 사용 |
 
 ## 사용 예시
@@ -71,6 +72,32 @@ docker compose run --rm classifier \
   --confidence \
   --reason
 ```
+
+### 포즈별 폴더 자동 정리
+
+```bash
+docker compose run --rm classifier \
+  --poses "서있기,앉기,점프,눕기" \
+  --input /data/photos \
+  --output /data/results.csv \
+  --organize /data/organized
+```
+
+결과 폴더 구조:
+```
+organized/
+├── 서있기/
+│   ├── photo1.jpg
+│   └── photo5.jpg
+├── 앉기/
+│   └── photo2.jpg
+├── 점프/
+│   └── photo3.jpg
+└── 눕기/
+    └── photo4.jpg
+```
+
+> 원본 파일은 그대로 유지되며, 분류된 파일이 복사됩니다.
 
 ### 단일 파일
 

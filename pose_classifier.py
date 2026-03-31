@@ -3,6 +3,7 @@ import base64
 import csv
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -32,6 +33,7 @@ def parse_args():
     parser.add_argument("--confidence", action="store_true", help="신뢰도 점수 포함")
     parser.add_argument("--reason", action="store_true", help="분류 이유 포함")
     parser.add_argument("--api-key", help="Anthropic API 키 (기본값: ANTHROPIC_API_KEY 환경변수)")
+    parser.add_argument("--organize", metavar="DIR", help="분류된 이미지를 포즈별 서브폴더로 복사할 디렉토리")
     return parser.parse_args()
 
 
@@ -170,6 +172,44 @@ def write_json(results: list, poses: list, output_path: str, include_confidence:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
 
+def organize_files(results: list, images: list, organize_dir: str):
+    base = Path(organize_dir)
+    img_map = {p.name: p for p in images}
+
+    copied = 0
+    errors = 0
+    for r in results:
+        pose = r.get("pose")
+        filename = r.get("file")
+        if not pose or pose == "ERROR" or filename not in img_map:
+            continue
+        dest_dir = base / pose
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / filename
+        # 같은 이름 파일이 이미 있으면 _1, _2 ... 붙이기
+        if dest.exists():
+            stem, suffix = dest.stem, dest.suffix
+            n = 1
+            while dest.exists():
+                dest = dest_dir / f"{stem}_{n}{suffix}"
+                n += 1
+        try:
+            shutil.copy2(img_map[filename], dest)
+            copied += 1
+        except Exception as e:
+            console.print(f"[red]복사 오류 {filename}: {e}[/red]")
+            errors += 1
+
+    console.print(f"\n폴더 정리 완료: [bold]{organize_dir}[/bold]")
+    console.print(f"  복사됨: {copied}장" + (f"  오류: {errors}장" if errors else ""))
+
+    # 생성된 폴더 목록 출력
+    for pose_dir in sorted(base.iterdir()):
+        if pose_dir.is_dir():
+            count = sum(1 for f in pose_dir.iterdir() if f.is_file())
+            console.print(f"  [cyan]{pose_dir.name}/[/cyan]  {count}장")
+
+
 def print_summary(results: list, poses: list):
     counts = {pose: 0 for pose in poses}
     error_count = 0
@@ -221,7 +261,10 @@ def main():
     console.print(f"\n[bold]🤖 포즈 분류기[/bold]")
     console.print(f"  포즈: {', '.join(poses)}")
     console.print(f"  이미지: {len(images)}장  ({args.input})")
-    console.print(f"  출력: {args.output}\n")
+    console.print(f"  출력: {args.output}")
+    if args.organize:
+        console.print(f"  폴더 정리: {args.organize}")
+    console.print()
 
     results = []
 
@@ -255,6 +298,9 @@ def main():
 
     console.print(f"\n결과 저장됨: [bold]{output}[/bold]")
     print_summary(results, poses)
+
+    if args.organize:
+        organize_files(results, images, args.organize)
 
 
 if __name__ == "__main__":
