@@ -17,7 +17,8 @@ pose-classifier-cli/
 │   ├── photo1.jpg
 │   ├── photo2.jpg
 │   └── results.csv        # 실행 후 생성됨
-├── pose_classifier.py
+├── pose_classifier.py     # 분류 CLI
+├── organize_from_csv.py   # CSV 기반 폴더 정리 CLI
 ├── Dockerfile
 ├── docker-compose.yml
 └── .env
@@ -139,15 +140,6 @@ docker compose run --rm classifier \
   --output /data/results.csv
 ```
 
-### 단일 파일 분류
-
-```bash
-docker compose run --rm classifier \
-  --poses "서있기,앉기" \
-  --input /data/photo.jpg \
-  --output /data/results.csv
-```
-
 ## 출력 형식
 
 ### CSV (기본)
@@ -187,6 +179,54 @@ photo2.jpg,앉기,0.88,의자에 앉은 자세
 ──────────────────────────────────────────────────
   합계                12장
 ```
+
+---
+
+## organize_from_csv.py — CSV 기반 폴더 정리
+
+이미 생성된 `results.csv`를 바탕으로 이미지를 포즈별 서브폴더로 복사합니다.  
+분류를 다시 실행하지 않아도 됩니다.
+
+### 옵션
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `--csv` | 분류 결과 CSV 파일 경로 | 필수 |
+| `--source` | 원본 이미지 디렉토리 | CSV 파일과 같은 디렉토리 |
+| `--output` | 정리된 이미지를 저장할 대상 디렉토리 | 필수 |
+
+### 사용 예시
+
+```bash
+# 로컬에서 직접 실행
+python organize_from_csv.py --csv data/results.csv --output data/organized
+
+# 소스 디렉토리를 별도로 지정
+python organize_from_csv.py --csv data/results.csv --source data/ --output data/organized
+
+# Docker에서 실행
+docker compose run --rm --entrypoint python classifier \
+  organize_from_csv.py \
+  --csv /data/results.csv \
+  --output /data/organized
+```
+
+결과 폴더 구조:
+
+```
+organized/
+├── 서있기/
+│   ├── photo1.jpg
+│   └── photo5.jpg
+├── 앉기/
+│   └── photo2.jpg
+└── 점프/
+    └── photo3.jpg
+```
+
+> 원본 파일은 그대로 유지되며, 복사본만 생성됩니다.
+
+---
 
 ## 지원 형식
 
