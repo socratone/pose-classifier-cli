@@ -1,0 +1,7 @@
+services:
+  classifier:
+    build: .
+    volumes:
+      - .:/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
